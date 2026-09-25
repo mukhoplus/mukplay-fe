@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { GameBoard } from '../components/GameBoard';
 import { useAuthStore } from '../stores/authStore';
 import { useStompStore } from '../stores/stompStore';
+import { useKeyboardController } from '../hooks/useKeyboardController';
 
 export const GameBoardPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -10,7 +11,16 @@ export const GameBoardPage: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const token = useAuthStore((state) => state.token);
 
-  const { connect, disconnect, positions, gameState } = useStompStore();
+  const { connect, disconnect, positions, gameState, sendMove } = useStompStore();
+
+  useKeyboardController({
+    onMove: (direction) => {
+      if (roomId) {
+        sendMove(roomId, direction);
+      }
+    },
+    enabled: true,
+  });
 
   useEffect(() => {
     if (roomId && token) {
