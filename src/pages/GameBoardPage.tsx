@@ -1,30 +1,92 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { GameBoard } from '../components/GameBoard';
+import { useAuthStore } from '../stores/authStore';
+import { useStompStore } from '../stores/stompStore';
 
 export const GameBoardPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const token = useAuthStore((state) => state.token);
+
+  const { connect, disconnect, positions, gameState } = useStompStore();
+
+  useEffect(() => {
+    if (roomId && token) {
+      connect(roomId, token);
+    }
+    return () => {
+      disconnect();
+    };
+  }, [roomId, token, connect, disconnect]);
+
+  // Demo fallback positions if not yet connected
+  const displayPositions = positions.length > 0 ? positions : [
+    { userId: user?.id ?? 1, x: 25.0, y: 50.0, alive: true },
+    { userId: 2, x: 75.0, y: 50.0, alive: true },
+    { userId: 3, x: 50.0, y: 50.0, alive: false },
+  ];
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h2>OX 게임 보드: {roomId}</h2>
-      <div style={{ display: 'flex', width: '100%', height: '300px', border: '2px solid #ccc', margin: '1rem 0' }}>
-        <div style={{ flex: 1, background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', fontWeight: 'bold', color: '#ef4444' }}>
-          O
+    <div style={{ padding: '1rem', maxWidth: '850px', margin: '0 auto' }}>
+      {/* Top HUD */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.75rem 1.25rem',
+          background: '#1f2937',
+          color: 'white',
+          borderRadius: '8px',
+          marginBottom: '1rem',
+        }}
+      >
+        <div>
+          <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>방 번호: {roomId}</span>
+          <h3 style={{ margin: '0.2rem 0 0 0' }}>라운드 {gameState?.currentRound ?? 1} / {gameState?.maxRounds ?? 5}</h3>
         </div>
-        <div style={{ width: '40px', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          |
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '0.8rem', color: '#fbbf24' }}>남은 시간</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>08초</div>
         </div>
-        <div style={{ flex: 1, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', fontWeight: 'bold', color: '#3b82f6' }}>
-          X
+        <div>
+          <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>생존자</span>
+          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4ade80' }}>
+            {gameState?.alivePlayerCount ?? 2}명
+          </div>
         </div>
       </div>
-      <button
-        onClick={() => navigate(`/result/${roomId}`)}
-        style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}
+
+      {/* Question HUD */}
+      <div
+        style={{
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '1rem',
+          textAlign: 'center',
+          marginBottom: '1rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}
       >
-        게임 종료 (결과 보기)
-      </button>
+        <span style={{ fontSize: '0.85rem', color: '#3b82f6', fontWeight: 'bold' }}>Q. OX 퀴즈</span>
+        <h2 style={{ margin: '0.5rem 0', fontSize: '1.3rem' }}>대한민국의 수도는 서울이다?</h2>
+      </div>
+
+      {/* Main Game Board */}
+      <GameBoard positions={displayPositions} currentUserId={user?.id ?? 1} />
+
+      {/* Footer controls */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+        <button
+          onClick={() => navigate(`/result/${roomId}`)}
+          style={{ padding: '0.5rem 1rem', background: '#e5e7eb', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          결과창으로 이동 (테스트)
+        </button>
+      </div>
     </div>
   );
 };
