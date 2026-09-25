@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GameBoard } from '../components/GameBoard';
+import { MobileDpad } from '../components/MobileDpad';
 import { useAuthStore } from '../stores/authStore';
 import { useStompStore } from '../stores/stompStore';
 import { useKeyboardController } from '../hooks/useKeyboardController';
@@ -87,6 +88,16 @@ export const GameBoardPage: React.FC = () => {
 
       {/* Main Game Board */}
       <GameBoard positions={displayPositions} currentUserId={user?.id ?? 1} />
+
+      {/* Mobile Discrete Tap D-pad */}
+      <MobileDpad
+        onMove={(direction) => {
+          if (roomId) {
+            sendMove(roomId, direction);
+          }
+        }}
+        disabled={false}
+      />
 
       {/* Footer controls */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
