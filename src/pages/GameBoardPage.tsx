@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GameBoard } from '../components/GameBoard';
 import { MobileDpad } from '../components/MobileDpad';
+import { RoundTimerBar } from '../components/RoundTimerBar';
 import { useAuthStore } from '../stores/authStore';
 import { useStompStore } from '../stores/stompStore';
 import { useKeyboardController } from '../hooks/useKeyboardController';
@@ -58,9 +59,8 @@ export const GameBoardPage: React.FC = () => {
           <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>방 번호: {roomId}</span>
           <h3 style={{ margin: '0.2rem 0 0 0' }}>라운드 {gameState?.currentRound ?? 1} / {gameState?.maxRounds ?? 5}</h3>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: '#fbbf24' }}>남은 시간</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>08초</div>
+        <div style={{ textAlign: 'center', minWidth: '180px' }}>
+          <RoundTimerBar endsAt={gameState?.endsAt ?? null} />
         </div>
         <div>
           <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>생존자</span>
