@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { PlayerPosition } from '../stores/stompStore';
 
 interface GameBoardProps {
@@ -6,9 +6,53 @@ interface GameBoardProps {
   currentUserId?: number;
 }
 
+/**
+ * High-performance RAF Position Renderer:
+ * Uses requestAnimationFrame and direct DOM transform `translate3d(calc(...))`
+ * to bypass heavy React virtual DOM reconciliation during high-frequency position ticks.
+ */
 export const GameBoard: React.FC<GameBoardProps> = ({ positions, currentUserId }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playerNodesRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  const positionsRef = useRef<PlayerPosition[]>(positions);
+
+  positionsRef.current = positions;
+
+  useEffect(() => {
+    let animFrameId: number;
+
+    const renderTick = () => {
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+
+        positionsRef.current.forEach((p) => {
+          const node = playerNodesRef.current.get(p.userId);
+          if (node) {
+            // Convert normalized coordinates (0~100) to pixel offset
+            const px = (p.x / 100) * width;
+            const py = (p.y / 100) * height;
+
+            // Hardware-accelerated GPU translate3d without React state re-rendering
+            node.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
+            node.style.opacity = p.alive ? '1' : '0.3';
+          }
+        });
+      }
+      animFrameId = requestAnimationFrame(renderTick);
+    };
+
+    animFrameId = requestAnimationFrame(renderTick);
+    return () => {
+      cancelAnimationFrame(animFrameId);
+    };
+  }, []);
+
   return (
     <div
+      ref={containerRef}
       style={{
         position: 'relative',
         width: '100%',
@@ -86,18 +130,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({ positions, currentUserId }
         </span>
       </div>
 
-      {/* Player Avatars Rendered on Normalized Logical Coordinates (0.0 ~ 100.0) */}
+      {/* Player Avatars Rendered and Smoothly Updated via RAF */}
       {positions.map((p) => {
         const isMe = p.userId === currentUserId;
         return (
           <div
             key={p.userId}
+            ref={(el) => {
+              if (el) {
+                playerNodesRef.current.set(p.userId, el);
+              } else {
+                playerNodesRef.current.delete(p.userId);
+              }
+            }}
             style={{
               position: 'absolute',
-              left: `${p.x}%`,
-              top: `${p.y}%`,
-              transform: 'translate(-50%, -50%)',
-              transition: 'left 0.1s linear, top 0.1s linear',
+              left: 0,
+              top: 0,
+              transform: `translate3d(${p.x}%, ${p.y}%, 0) translate(-50%, -50%)`,
+              willChange: 'transform',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
