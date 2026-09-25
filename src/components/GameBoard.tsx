@@ -157,6 +157,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ positions, currentUserId }
             }}
           >
             <div
+              className={!p.alive ? 'eliminated-fall' : ''}
               style={{
                 width: '28px',
                 height: '28px',
@@ -175,6 +176,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ positions, currentUserId }
               {p.alive ? (isMe ? '나' : `P${p.userId}`) : '💀'}
             </div>
             <span
+              className={!p.alive ? 'eliminated-fall' : ''}
               style={{
                 fontSize: '0.7rem',
                 fontWeight: isMe ? 'bold' : 'normal',
