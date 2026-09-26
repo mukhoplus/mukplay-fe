@@ -76,14 +76,19 @@ export const GameBoardPage: React.FC = () => {
           background: '#ffffff',
           border: '1px solid #e5e7eb',
           borderRadius: '8px',
-          padding: '1rem',
+          padding: '1.25rem',
           textAlign: 'center',
           marginBottom: '1rem',
           boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
         }}
       >
         <span style={{ fontSize: '0.85rem', color: '#3b82f6', fontWeight: 'bold' }}>Q. OX 퀴즈</span>
-        <h2 style={{ margin: '0.5rem 0', fontSize: '1.3rem' }}>대한민국의 수도는 서울이다?</h2>
+        <h2 style={{ margin: '0.5rem 0', fontSize: '1.35rem', color: '#111827' }}>
+          {gameState?.questionContent ?? '문제를 불러오는 중입니다...'}
+        </h2>
+        <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.3rem' }}>
+          키보드 [W, A, S, D] 또는 [방향키]를 눌러 O 또는 X 구역으로 이동하세요!
+        </div>
       </div>
 
       {/* Main Game Board */}
