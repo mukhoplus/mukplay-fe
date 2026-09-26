@@ -1,72 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
 export interface RoomItem {
   roomId: string;
-  title: string;
-  hostNickname: string;
-  currentParticipants: number;
-  maxParticipants: number;
-  status: 'WAITING' | 'PLAYING' | 'FINISHED';
+  name: string;
+  hostId: number;
+  currentPlayers: number;
+  maxPlayers: number;
+  state: 'WAITING' | 'PLAYING' | 'FINISHED';
+  participants: Array<{ userId: number; nickname: string }>;
 }
-
-const INITIAL_ROOMS: RoomItem[] = [
-  {
-    roomId: 'room-101',
-    title: '초보자 환영 OX 퀴즈방',
-    hostNickname: '방장먹호',
-    currentParticipants: 3,
-    maxParticipants: 8,
-    status: 'WAITING',
-  },
-  {
-    roomId: 'room-102',
-    title: '상식 퀴즈 마스터전',
-    hostNickname: '퀴즈왕',
-    currentParticipants: 8,
-    maxParticipants: 8,
-    status: 'WAITING',
-  },
-  {
-    roomId: 'room-103',
-    title: '스피드 퀴즈 한판',
-    hostNickname: '스피드스타',
-    currentParticipants: 5,
-    maxParticipants: 10,
-    status: 'PLAYING',
-  },
-];
 
 export const LobbyPage: React.FC = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const [rooms, setRooms] = useState<RoomItem[]>(INITIAL_ROOMS);
+  const token = useAuthStore((state) => state.token);
+  const [rooms, setRooms] = useState<RoomItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [maxParticipants, setMaxParticipants] = useState(8);
+  const [errorMsg] = useState('');
 
-  const handleCreateRoom = (e: React.FormEvent) => {
+  const fetchRooms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/rooms', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setRooms(data.data);
+      }
+    } catch (e) {
+      console.error('방 목록 조회 실패', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchRooms();
+  }, [fetchRooms]);
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    const newRoom: RoomItem = {
-      roomId: `room-${Date.now().toString().slice(-4)}`,
-      title: newTitle.trim(),
-      hostNickname: user?.nickname ?? '호스트',
-      currentParticipants: 1,
-      maxParticipants,
-      status: 'WAITING',
-    };
+    try {
+      const res = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newTitle.trim(),
+          maxPlayers: maxParticipants,
+        }),
+      });
 
-    setRooms([newRoom, ...rooms]);
-    setShowModal(false);
-    setNewTitle('');
-    navigate(`/room/${newRoom.roomId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || '방 생성에 실패했습니다.');
+        return;
+      }
+
+      setShowModal(false);
+      setNewTitle('');
+      navigate(`/room/${data.data.roomId}`);
+    } catch (err: any) {
+      alert(err.message || '방 생성 중 오류가 발생했습니다.');
+    }
   };
 
-  const handleJoinRoom = (roomId: string, status: string, current: number, max: number) => {
-    if (status !== 'WAITING') {
+  const handleJoinRoom = async (roomId: string, state: string, current: number, max: number) => {
+    if (state !== 'WAITING') {
       alert('이미 진행 중이거나 종료된 방입니다.');
       return;
     }
@@ -74,7 +84,30 @@ export const LobbyPage: React.FC = () => {
       alert('방 정원이 가득 찼습니다.');
       return;
     }
-    navigate(`/room/${roomId}`);
+
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/join`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        // 이미 참여 중인 경우에도 대기실로 이동 허용
+        if (data.code === 'R003') {
+          navigate(`/room/${roomId}`);
+          return;
+        }
+        alert(data.message || '방 입장에 실패했습니다.');
+        return;
+      }
+
+      navigate(`/room/${roomId}`);
+    } catch (e: any) {
+      alert(e.message || '방 입장 중 오류가 발생했습니다.');
+    }
   };
 
   return (
@@ -83,80 +116,97 @@ export const LobbyPage: React.FC = () => {
         <div>
           <h1 style={{ margin: 0 }}>Mukplay 로비</h1>
           <p style={{ margin: '0.5rem 0 0 0', color: '#6b7280' }}>
-            환영합니다, <strong>{user?.nickname ?? '게스트'}</strong>님 (Lv.{user?.level ?? 1})
+            환영합니다, <strong>{user?.nickname ?? '플레이어'}</strong>님 (ID: {user?.id})
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{ padding: '0.75rem 1.5rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          + 방 만들기
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            onClick={fetchRooms}
+            style={{ padding: '0.75rem 1rem', background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            새로고침
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{ padding: '0.75rem 1.5rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            + 방 만들기
+          </button>
+        </div>
       </header>
 
       {/* Room List Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
-        {rooms.map((room) => {
-          const isFull = room.currentParticipants >= room.maxParticipants;
-          const isWaiting = room.status === 'WAITING';
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>방 목록을 불러오는 중...</div>
+      ) : rooms.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '4rem 1rem', background: '#f9fafb', borderRadius: '8px', border: '1px dashed #d1d5db' }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', color: '#374151' }}>현재 대기 중인 방이 없습니다.</h3>
+          <p style={{ margin: 0, color: '#9ca3af' }}>새로운 방을 생성하여 OX 퀴즈 게임을 시작해보세요!</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          {rooms.map((room) => {
+            const isFull = room.currentPlayers >= room.maxPlayers;
+            const isWaiting = room.state === 'WAITING';
 
-          return (
-            <div
-              key={room.roomId}
-              className="room-card"
-              style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                padding: '1.25rem',
-                background: '#ffffff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '4px',
-                      background: isWaiting ? '#dcfce7' : '#fee2e2',
-                      color: isWaiting ? '#166534' : '#991b1b',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    {room.status}
-                  </span>
-                  <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-                    {room.currentParticipants}/{room.maxParticipants}명
-                  </span>
-                </div>
-                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>{room.title}</h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#9ca3af' }}>방장: {room.hostNickname}</p>
-              </div>
-
-              <button
-                disabled={!isWaiting || isFull}
-                onClick={() => handleJoinRoom(room.roomId, room.status, room.currentParticipants, room.maxParticipants)}
+            return (
+              <div
+                key={room.roomId}
+                className="room-card"
                 style={{
-                  marginTop: '1.25rem',
-                  padding: '0.6rem',
-                  background: !isWaiting || isFull ? '#e5e7eb' : '#10b981',
-                  color: !isWaiting || isFull ? '#9ca3af' : 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontWeight: 'bold',
-                  cursor: !isWaiting || isFull ? 'not-allowed' : 'pointer',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '1.25rem',
+                  background: '#ffffff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
                 }}
               >
-                {!isWaiting ? '진행 중' : isFull ? '정원 초과' : '입장하기'}
-              </button>
-            </div>
-          );
-        })}
-      </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '4px',
+                        background: isWaiting ? '#dcfce7' : '#fee2e2',
+                        color: isWaiting ? '#166534' : '#991b1b',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {room.state}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                      {room.currentPlayers}/{room.maxPlayers}명
+                    </span>
+                  </div>
+                  <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>{room.name}</h3>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#9ca3af' }}>방 코드: {room.roomId}</p>
+                </div>
+
+                <button
+                  disabled={!isWaiting || isFull}
+                  onClick={() => handleJoinRoom(room.roomId, room.state, room.currentPlayers, room.maxPlayers)}
+                  style={{
+                    marginTop: '1.25rem',
+                    padding: '0.6rem',
+                    background: !isWaiting || isFull ? '#e5e7eb' : '#10b981',
+                    color: !isWaiting || isFull ? '#9ca3af' : 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 'bold',
+                    cursor: !isWaiting || isFull ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {!isWaiting ? '진행 중' : isFull ? '정원 초과' : '입장하기'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Create Room Modal */}
       {showModal && (
@@ -172,23 +222,26 @@ export const LobbyPage: React.FC = () => {
                   placeholder="예: 재미있는 OX 퀴즈"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: '4px' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>최대 인원 (2~10명)</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>최대 인원 (2~50명)</label>
                 <select
                   value={maxParticipants}
                   onChange={(e) => setMaxParticipants(Number(e.target.value))}
-                  style={{ width: '100%', padding: '0.5rem' }}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px' }}
                 >
-                  {[2, 4, 6, 8, 10].map((num) => (
+                  {[2, 4, 6, 8, 10, 20].map((num) => (
                     <option key={num} value={num}>
                       {num}명
                     </option>
                   ))}
                 </select>
               </div>
+              {errorMsg && (
+                <div style={{ color: '#ef4444', fontSize: '0.85rem' }}>{errorMsg}</div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
                 <button
                   type="button"
