@@ -27,6 +27,16 @@ export interface GameEventMessage {
   data: Record<string, unknown>;
 }
 
+export type MoveDirection =
+  | 'UP'
+  | 'DOWN'
+  | 'LEFT'
+  | 'RIGHT'
+  | 'UP_LEFT'
+  | 'UP_RIGHT'
+  | 'DOWN_LEFT'
+  | 'DOWN_RIGHT';
+
 interface StompState {
   client: Client | null;
   connected: boolean;
@@ -35,7 +45,8 @@ interface StompState {
   lastEvent: GameEventMessage | null;
   connect: (roomId: string, token: string) => void;
   disconnect: () => void;
-  sendMove: (roomId: string, direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => void;
+  sendMove: (roomId: string, direction: MoveDirection) => void;
+  setInitialGameState: (state: GameStateMessage, positions: PlayerPosition[]) => void;
 }
 
 export const useStompStore = create<StompState>((set, get) => ({
@@ -44,6 +55,13 @@ export const useStompStore = create<StompState>((set, get) => ({
   gameState: null,
   positions: [],
   lastEvent: null,
+
+  setInitialGameState: (gameState, positions) => {
+    set((prev) => ({
+      gameState: prev.gameState ?? gameState,
+      positions: prev.positions.length > 0 ? prev.positions : positions,
+    }));
+  },
 
   connect: (roomId: string, token: string) => {
     // If already connected, do not re-init
@@ -109,7 +127,7 @@ export const useStompStore = create<StompState>((set, get) => ({
     }
   },
 
-  sendMove: (roomId: string, direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
+  sendMove: (roomId: string, direction: MoveDirection) => {
     const { client, connected } = get();
     if (client && connected) {
       client.publish({
