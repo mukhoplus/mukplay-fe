@@ -1,125 +1,231 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
 export interface Participant {
   userId: number;
   nickname: string;
-  isHost: boolean;
-  level: number;
+}
+
+export interface RoomDetail {
+  roomId: string;
+  name: string;
+  hostId: number;
+  currentPlayers: number;
+  maxPlayers: number;
+  state: 'WAITING' | 'PLAYING' | 'FINISHED';
+  participants: Participant[];
 }
 
 export const RoomWaitingPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const token = useAuthStore((state) => state.token);
 
-  const [participants] = useState<Participant[]>([
-    {
-      userId: user?.id ?? 1,
-      nickname: user?.nickname ?? '나 (호스트)',
-      isHost: true,
-      level: user?.level ?? 1,
-    },
-    {
-      userId: 2,
-      nickname: '게임친구A',
-      isHost: false,
-      level: 3,
-    },
-    {
-      userId: 3,
-      nickname: '퀴즈고수B',
-      isHost: false,
-      level: 5,
-    },
-  ]);
+  const [room, setRoom] = useState<RoomDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const isCurrentUserHost = participants.find((p) => p.userId === (user?.id ?? 1))?.isHost ?? true;
+  const fetchRoom = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const res = await fetch(`/api/rooms/${roomId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setRoom(data.data);
+        // 만약 게임이 이미 시작되었으면 자동으로 게임 보드로 이동
+        if (data.data.state === 'PLAYING') {
+          navigate(`/game/${roomId}`);
+        }
+      } else {
+        setErrorMsg(data.message || '방 정보를 불러올 수 없습니다.');
+      }
+    } catch (e: any) {
+      console.error('방 상세 조회 실패', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [roomId, token, navigate]);
 
-  const handleStartGame = () => {
-    if (participants.length < 2) {
-      alert('게임을 시작하려면 최소 2명 이상의 참가자가 필요합니다.');
+  useEffect(() => {
+    fetchRoom();
+    // 2초마다 참가자 목록 자동 동기화
+    const interval = setInterval(fetchRoom, 2000);
+    return () => clearInterval(interval);
+  }, [fetchRoom]);
+
+  const isCurrentUserHost = room ? room.hostId === user?.id : false;
+
+  const handleAddBot = async () => {
+    if (!roomId) return;
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/bot`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setRoom(data.data);
+      } else {
+        alert(data.message || '봇 추가에 실패했습니다.');
+      }
+    } catch (e: any) {
+      alert(e.message || '봇 추가 중 오류 발생');
+    }
+  };
+
+  const handleStartGame = async () => {
+    if (!roomId) return;
+    if ((room?.currentPlayers ?? 0) < 2) {
+      alert('게임을 시작하려면 최소 2명 이상의 참가자가 필요합니다. [연습봇 추가]를 눌러 봇과 함께 테스트해보세요!');
       return;
     }
-    navigate(`/game/${roomId}`);
+
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/start`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || '게임 시작에 실패했습니다.');
+        return;
+      }
+
+      navigate(`/game/${roomId}`);
+    } catch (e: any) {
+      alert(e.message || '게임 시작 요청 중 오류가 발생했습니다.');
+    }
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    if (roomId && token) {
+      try {
+        await fetch(`/api/rooms/${roomId}/leave`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
     navigate('/lobby');
   };
+
+  if (loading && !room) {
+    return <div style={{ padding: '3rem', textAlign: 'center' }}>대기실 정보를 불러오는 중...</div>;
+  }
+
+  if (errorMsg && !room) {
+    return (
+      <div style={{ padding: '3rem', textAlign: 'center' }}>
+        <p style={{ color: '#ef4444' }}>{errorMsg}</p>
+        <button onClick={() => navigate('/lobby')} style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}>
+          로비로 돌아가기
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem' }}>
         <div>
-          <h2 style={{ margin: 0 }}>대기실: {roomId}</h2>
+          <h2 style={{ margin: 0 }}>방 제목: {room?.name}</h2>
           <p style={{ margin: '0.3rem 0 0 0', color: '#6b7280' }}>
-            참가자 {participants.length} / 8 명
+            방 코드: <strong>{room?.roomId}</strong> | 참가자: {room?.currentPlayers} / {room?.maxPlayers}명
           </p>
         </div>
-        <button
-          onClick={handleLeaveRoom}
-          style={{ padding: '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-        >
-          나가기
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {isCurrentUserHost && (
+            <button
+              onClick={handleAddBot}
+              style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              + 연습봇 추가
+            </button>
+          )}
+          <button
+            onClick={handleLeaveRoom}
+            style={{ padding: '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            방 나가기
+          </button>
+        </div>
       </header>
 
       {/* Participant List */}
       <div style={{ margin: '2rem 0' }}>
         <h3 style={{ marginBottom: '1rem' }}>참가자 명단</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
-          {participants.map((p) => (
-            <div
-              key={p.userId}
-              style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                padding: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: p.isHost ? '#f0fdf4' : '#ffffff',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>
-                  {p.nickname}
+          {room?.participants.map((p) => {
+            const isHost = p.userId === room.hostId;
+            const isMe = p.userId === user?.id;
+
+            return (
+              <div
+                key={p.userId}
+                style={{
+                  border: isMe ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isHost ? '#f0fdf4' : '#ffffff',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    {p.nickname} {isMe && '(나)'}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                    ID: {p.userId}
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                  Lv.{p.level}
-                </div>
+                {isHost && (
+                  <span style={{ fontSize: '0.75rem', background: '#22c55e', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 'bold' }}>
+                    방장 👑
+                  </span>
+                )}
               </div>
-              {p.isHost && (
-                <span style={{ fontSize: '0.75rem', background: '#22c55e', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 'bold' }}>
-                  방장 👑
-                </span>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Control Buttons */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginTop: '2rem' }}>
         {isCurrentUserHost ? (
-          <button
-            onClick={handleStartGame}
-            style={{
-              padding: '1rem 3rem',
-              background: '#3b82f6',
-              color: 'white',
-              fontSize: '1.2rem',
-              fontWeight: 'bold',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
-            }}
-          >
-            게임 시작하기
-          </button>
+          <>
+            <button
+              onClick={handleStartGame}
+              style={{
+                padding: '1rem 3rem',
+                background: '#3b82f6',
+                color: 'white',
+                fontSize: '1.2rem',
+                fontWeight: 'bold',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
+              }}
+            >
+              게임 시작하기
+            </button>
+            {(room?.currentPlayers ?? 0) < 2 && (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#ef4444' }}>
+                * 최소 2명 이상이어야 합니다. 혼자 테스트하시려면 위의 [연습봇 추가]를 눌러주세요!
+              </p>
+            )}
+          </>
         ) : (
           <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
             방장이 게임을 시작하기를 기다리고 있습니다...
