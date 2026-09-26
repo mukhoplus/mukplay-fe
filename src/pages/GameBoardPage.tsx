@@ -13,7 +13,7 @@ export const GameBoardPage: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const token = useAuthStore((state) => state.token);
 
-  const { connect, disconnect, positions, gameState, sendMove } = useStompStore();
+  const { connect, disconnect, positions, gameState, sendMove, setInitialGameState } = useStompStore();
 
   useKeyboardController({
     onMove: (direction) => {
@@ -24,6 +24,36 @@ export const GameBoardPage: React.FC = () => {
     enabled: true,
   });
 
+  // 1. 마운트 시 현재 활성 게임 상태 및 문제를 즉시 REST로 조회 (소켓 연결 딜레이 대비 즉시 표시)
+  useEffect(() => {
+    if (!roomId) return;
+    fetch(`/api/rooms/${roomId}/game`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData.success && resData.data) {
+          const g = resData.data;
+          setInitialGameState(
+            {
+              roomId: g.roomId,
+              state: g.state,
+              currentRound: g.currentRound,
+              maxRounds: g.maxRounds,
+              questionId: g.questionId,
+              questionContent: g.questionContent,
+              startedAt: g.startedAt,
+              endsAt: g.endsAt,
+              alivePlayerCount: g.alivePlayerCount,
+            },
+            g.positions ?? []
+          );
+        }
+      })
+      .catch((err) => console.error('초기 게임 상태 조회 실패', err));
+  }, [roomId, token, setInitialGameState]);
+
+  // 2. 실시간 웹소켓 연결
   useEffect(() => {
     if (roomId && token) {
       connect(roomId, token);
