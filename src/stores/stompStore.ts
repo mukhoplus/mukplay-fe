@@ -14,6 +14,7 @@ export interface GameStateMessage {
   currentRound: number;
   maxRounds: number;
   questionId: number | null;
+  questionContent: string | null;
   startedAt: string;
   endsAt: string | null;
   alivePlayerCount: number;

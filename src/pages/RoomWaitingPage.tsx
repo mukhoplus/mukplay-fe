@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Client } from '@stomp/stompjs';
 import { useAuthStore } from '../stores/authStore';
 
 export interface Participant {
@@ -91,9 +92,37 @@ export const RoomWaitingPage: React.FC = () => {
     }
   }, [roomId, token, navigate]);
 
+  // 대기실 실시간 소켓 연결 (방장이 게임 시작 시 모든 참가자 즉시 이동)
+  useEffect(() => {
+    if (!roomId || !token) return;
+
+    const wsUrl = `ws://${window.location.host}/ws/game?token=${token}`;
+    const client = new Client({
+      brokerURL: wsUrl,
+      reconnectDelay: 3000,
+      onConnect: () => {
+        client.subscribe(`/topic/room/${roomId}/start`, (msg) => {
+          try {
+            const data = JSON.parse(msg.body);
+            if (data.state === 'PLAYING') {
+              navigate(`/game/${roomId}`);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      },
+    });
+
+    client.activate();
+    return () => {
+      client.deactivate();
+    };
+  }, [roomId, token, navigate]);
+
   useEffect(() => {
     fetchRoom();
-    const interval = setInterval(fetchRoom, 2000);
+    const interval = setInterval(fetchRoom, 1000);
     return () => clearInterval(interval);
   }, [fetchRoom]);
 
